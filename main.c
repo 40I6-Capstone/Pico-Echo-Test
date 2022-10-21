@@ -5,28 +5,36 @@
  * @author Shaqeeb Momen
  */
 
-#include <stdlib.h>
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/uart.h"
 #include "pico/multicore.h"
 
-// Defining Pin numbers
-#define UART0_TX_PIN 0 // GPIO 0
-#define UART0_RX_PIN 1 // GPIO 1
+#define UART0_TX_PIN 0
+#define UART0_RX_PIN 1
 
 // Main function to execute on core 1
 void core1_main()
 {
-    // Initialize UART bus
+
     uart_init(uart0, 115200); // Make sure this is consistent with the baud setup on the ESP-01s
+
     // Setting up GPIO pins
     gpio_set_function(UART0_TX_PIN, GPIO_FUNC_UART);
     gpio_set_function(UART0_RX_PIN, GPIO_FUNC_UART);
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+
+    // Wait till usb connects
+    while (!stdio_usb_connected())
+        ;
+    gpio_put(PICO_DEFAULT_LED_PIN, 1); // Trigger a status LED
+    printf("started\n");
 
     // Buffers for data
     char uart_rx; // Incoming through uart buffer
     char uart_tx; // Outgoing through uart buffer
+    printf("Core1 launch\n");
 
     while (true)
     {
@@ -37,14 +45,7 @@ void core1_main()
         {
             // Read data from uart
             uart_read_blocking(uart0, &uart_rx, 1);
-            printf("%c", uart_rx);
-        }
-
-        // USB Serial -> UART
-        while (scanf("%c", &uart_tx) != EOF) // While reading from stdio (mapped to the USB port)
-        {
-            // Print the read value back through 
-            uart_putc(uart0, uart_tx);
+            printf("Received: %c from esp01\n", uart_rx);
         }
     }
 }
@@ -59,6 +60,10 @@ void core0_main()
 
 int main()
 {
-    multicore_launch_core1(core1_main);
+
+    // Initialize UART bus
+    stdio_usb_init();
+    // ^That needs to happen on core0 it looks like, even if we actually print from core1
+    multicore_launch_core1(core1_main); // Starts up the other core
     core0_main();
 }
